@@ -12,6 +12,8 @@ services:
     build: service_users
     environment:
       - NODE_ENV=production
+    volumes:
+      - ./service_users/src/utils:/app/src/utils
     networks:
       - app-network
 

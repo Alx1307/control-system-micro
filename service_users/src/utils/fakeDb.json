@@ -1,0 +1,11 @@
+{
+  "7005ff27-cb29-4a41-af99-ddc722006cd6": {
+    "id": "7005ff27-cb29-4a41-af99-ddc722006cd6",
+    "email": "ivanov@mail.ru",
+    "passwordHash": "$2b$10$bm2sV9/40wYvDtNLrryMu.1gJNov4DcSBSWbGxuqwj5iK.azvlZBC",
+    "name": "Иванов Иван Иванович",
+    "role": "admin",
+    "createdAt": "2025-11-06T20:19:20.065Z",
+    "updatedAt": "2025-11-06T20:19:20.065Z"
+  }
+}

@@ -6,32 +6,40 @@ const CircuitBreaker = require('opossum');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Service URLs
-const USERS_SERVICE_URL = 'http://service_users:8000';
+const USERS_SERVICE_URL = 'http://service_users:8000/v1';
 const ORDERS_SERVICE_URL = 'http://service_orders:8000';
 
-// Circuit Breaker configuration
 const circuitOptions = {
-    timeout: 3000, // Timeout for requests (3 seconds)
-    errorThresholdPercentage: 50, // Open circuit after 50% of requests fail
-    resetTimeout: 3000, // Wait 30 seconds before trying to close the circuit
+    timeout: 5000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
 };
 
-// Create circuit breakers for each service
+// Improved Circuit Breaker for users service
 const usersCircuit = new CircuitBreaker(async (url, options = {}) => {
     try {
         const response = await axios({
-            url, ...options,
-            validateStatus: status => (status >= 200 && status < 300) || status === 404
+            url,
+            ...options,
+            // Accept all status codes - we'll handle them in the route
+            validateStatus: () => true
         });
-        return response.data;
+        
+        return {
+            data: response.data,
+            status: response.status,
+            headers: response.headers
+        };
     } catch (error) {
-        if (error.response && error.response.status === 404) {
-            return error.response.data;
+        // Only throw for network errors, timeouts, etc.
+        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            throw new Error('Service unavailable');
+        }
+        if (error.code === 'ECONNABORTED') {
+            throw new Error('Service timeout');
         }
         throw error;
     }
@@ -40,204 +48,222 @@ const usersCircuit = new CircuitBreaker(async (url, options = {}) => {
 const ordersCircuit = new CircuitBreaker(async (url, options = {}) => {
     try {
         const response = await axios({
-            url, ...options,
-            validateStatus: status => (status >= 200 && status < 300) || status === 404
+            url,
+            ...options,
+            validateStatus: () => true
         });
-        return response.data;
+        
+        return {
+            data: response.data,
+            status: response.status,
+            headers: response.headers
+        };
     } catch (error) {
-        if (error.response && error.response.status === 404) {
-            return error.response.data;
+        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            throw new Error('Service unavailable');
+        }
+        if (error.code === 'ECONNABORTED') {
+            throw new Error('Service timeout');
         }
         throw error;
     }
 }, circuitOptions);
 
 // Fallback functions
-usersCircuit.fallback(() => ({error: 'Users service temporarily unavailable'}));
-ordersCircuit.fallback(() => ({error: 'Orders service temporarily unavailable'}));
-
-// Routes with Circuit Breaker
-app.get('/users/:userId', async (req, res) => {
-    try {
-        const user = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/${req.params.userId}`);
-        if (user.error === 'User not found') {
-            res.status(404).json(user);
-        } else {
-            res.json(user);
-        }
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
+usersCircuit.fallback(() => ({ 
+    success: false,
+    error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Users service temporarily unavailable'
     }
-});
+}));
 
-app.post('/users', async (req, res) => {
+ordersCircuit.fallback(() => ({ 
+    success: false,
+    error: {
+        code: 'SERVICE_UNAVAILABLE', 
+        message: 'Orders service temporarily unavailable'
+    }
+}));
+
+// Auth Routes
+app.post('/v1/auth/register', async (req, res) => {
     try {
-        const user = await usersCircuit.fire(`${USERS_SERVICE_URL}/users`, {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/register`, {
             method: 'POST',
-            data: req.body
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-        res.status(201).json(user);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
 
-app.get('/users', async (req, res) => {
-    try {
-        const users = await usersCircuit.fire(`${USERS_SERVICE_URL}/users`);
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.delete('/users/:userId', async (req, res) => {
-    try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/${req.params.userId}`, {
-            method: 'DELETE'
-        });
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.put('/users/:userId', async (req, res) => {
-    try {
-        const user = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/${req.params.userId}`, {
-            method: 'PUT',
-            data: req.body
-        });
-        res.json(user);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.get('/orders/:orderId', async (req, res) => {
-    try {
-        const order = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`);
-        if (order.error === 'Order not found') {
-            res.status(404).json(order);
-        } else {
-            res.json(order);
+        // If circuit breaker returned fallback
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
         }
+
+        // Forward the exact status and data from users service
+        res.status(result.status).json(result.data);
+
     } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
+        console.error('Gateway register error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
     }
 });
 
-app.post('/orders', async (req, res) => {
+app.post('/v1/auth/login', async (req, res) => {
     try {
-        const order = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders`, {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/login`, {
             method: 'POST',
-            data: req.body
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-        res.status(201).json(order);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
 
-app.get('/orders', async (req, res) => {
-    try {
-        const orders = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders`);
-        res.json(orders);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.delete('/orders/:orderId', async (req, res) => {
-    try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
-            method: 'DELETE'
-        });
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.put('/orders/:orderId', async (req, res) => {
-    try {
-        const order = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
-            method: 'PUT',
-            data: req.body
-        });
-        res.json(order);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.get('/orders/status', async (req, res) => {
-    try {
-        const status = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/status`);
-        res.json(status);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-app.get('/orders/health', async (req, res) => {
-    try {
-        const health = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/health`);
-        res.json(health);
-    } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
-    }
-});
-
-// Gateway Aggregation: Get user details with their orders
-app.get('/users/:userId/details', async (req, res) => {
-    try {
-        const userId = req.params.userId;
-
-        // Get user details
-        const userPromise = usersCircuit.fire(`${USERS_SERVICE_URL}/users/${userId}`);
-
-        // Get user's orders (assuming orders have a userId field)
-        const ordersPromise = ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders`)
-            .then(orders => orders.filter(order => order.userId == userId));
-
-        // Wait for both requests to complete
-        const [user, userOrders] = await Promise.all([userPromise, ordersPromise]);
-
-        // If user not found, return 404
-        if (user.error === 'User not found') {
-            return res.status(404).json(user);
+        // If circuit breaker returned fallback
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
         }
 
-        // Return aggregated response
-        res.json({
-            user,
-            orders: userOrders
-        });
+        // Forward the exact status and data from users service
+        res.status(result.status).json(result.data);
+
     } catch (error) {
-        res.status(500).json({error: 'Internal server error'});
+        console.error('Gateway login error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
     }
 });
 
-// Health check endpoint that shows circuit breaker status
+// Health checks
+app.get('/v1/users/health', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/health`, {
+            method: 'GET'
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway health check error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+// Debug endpoint to check all users
+app.get('/v1/auth/debug-users', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/debug-users`, {
+            method: 'GET'
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway debug users error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+// Orders service routes (пример)
+app.get('/v1/orders/health', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/health`, {
+            method: 'GET'
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway orders health check error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+// API Gateway health check
 app.get('/health', (req, res) => {
     res.json({
-        status: 'API Gateway is running',
-        circuits: {
-            users: {
-                status: usersCircuit.status,
-                stats: usersCircuit.stats
-            },
-            orders: {
-                status: ordersCircuit.status,
-                stats: ordersCircuit.stats
+        success: true,
+        data: {
+            status: 'API Gateway is running',
+            timestamp: new Date().toISOString(),
+            circuits: {
+                users: {
+                    status: usersCircuit.status,
+                    stats: usersCircuit.stats
+                },
+                orders: {
+                    status: ordersCircuit.status,
+                    stats: ordersCircuit.stats
+                }
             }
         }
     });
 });
 
 app.get('/status', (req, res) => {
-    res.json({status: 'API Gateway is running'});
+    res.json({
+        success: true,
+        data: {
+            status: 'API Gateway is running',
+            service: 'api_gateway',
+            timestamp: new Date().toISOString()
+        }
+    });
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+    console.error('Unhandled error:', error);
+    res.status(500).json({
+        success: false,
+        error: {
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Internal server error'
+        }
+    });
 });
 
 // Start server
@@ -248,8 +274,24 @@ app.listen(PORT, () => {
     usersCircuit.on('open', () => console.log('Users circuit breaker opened'));
     usersCircuit.on('close', () => console.log('Users circuit breaker closed'));
     usersCircuit.on('halfOpen', () => console.log('Users circuit breaker half-open'));
+    usersCircuit.on('failure', (error) => console.log('Users circuit failure:', error.message));
+    usersCircuit.on('success', () => console.log('Users circuit success'));
+    usersCircuit.on('fallback', () => console.log('Users circuit fallback'));
 
     ordersCircuit.on('open', () => console.log('Orders circuit breaker opened'));
     ordersCircuit.on('close', () => console.log('Orders circuit breaker closed'));
     ordersCircuit.on('halfOpen', () => console.log('Orders circuit breaker half-open'));
+    ordersCircuit.on('failure', (error) => console.log('Orders circuit failure:', error.message));
+    ordersCircuit.on('success', () => console.log('Orders circuit success'));
+    ordersCircuit.on('fallback', () => console.log('Orders circuit fallback'));
+});
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: {
+            code: 'NOT_FOUND',
+            message: 'Route not found'
+        }
+    });
 });
