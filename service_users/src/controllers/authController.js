@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { addUser, getUserByEmail } = require('../utils/fakeDb');
+const fakeDb = require('../utils/fakeDb');
 
 const authController = {
   async register(req, res) {
@@ -14,7 +14,7 @@ const authController = {
         return res.error('VALIDATION_ERROR', 'Все поля обязательны для заполнения', 400);
       }
 
-      const existingUser = await getUserByEmail(email);
+      const existingUser = await fakeDb.getUserByEmail(email);
       if (existingUser) {
         return res.error('USER_EXISTS', 'Пользователь с таким email уже существует', 409);
       }
@@ -22,7 +22,7 @@ const authController = {
       const passwordHash = await bcrypt.hash(password, 10);
       const user = new User(email, passwordHash, name, role);
       
-      await addUser(user);
+      await fakeDb.addUser(user);
 
       console.log('[REGISTER] Пользователь создан и сохранен в fakeDb.json');
 
@@ -49,7 +49,7 @@ const authController = {
         return res.error('VALIDATION_ERROR', 'Email и пароль обязательны', 400);
       }
 
-      const user = await getUserByEmail(email);
+      const user = await fakeDb.getUserByEmail(email);
       if (!user) {
         return res.error('INVALID_CREDENTIALS', 'Неверный email или пароль', 401);
       }

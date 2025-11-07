@@ -5,6 +5,7 @@ services:
       - "8000:8000"
     environment:
       - NODE_ENV=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     networks:
       - app-network
 
@@ -12,6 +13,7 @@ services:
     build: service_users
     environment:
       - NODE_ENV=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     volumes:
       - ./service_users/src/utils:/app/src/utils
     networks:

@@ -172,6 +172,175 @@ app.get('/v1/users/health', async (req, res) => {
     }
 });
 
+// Debug route - добавлен этот маршрут
+app.get('/v1/users/debug', async (req, res) => {
+    try {
+        console.log('[GATEWAY_DEBUG] Headers:', req.headers);
+        
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/debug`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        console.log('[GATEWAY_DEBUG] Response from users service:', result.data);
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway debug error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+// Users service routes
+app.get('/v1/users/users', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway users list error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/users/profile', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/profile`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway profile error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/users/users/:userId', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway get user by ID error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.put('/v1/users/users/:userId', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
+            method: 'PUT',
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway update profile error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.delete('/v1/users/users/:userId', async (req, res) => {
+    try {
+        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway delete user error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
 // Debug endpoint to check all users
 app.get('/v1/auth/debug-users', async (req, res) => {
     try {
