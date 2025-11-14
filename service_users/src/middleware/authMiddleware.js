@@ -9,7 +9,10 @@ const authMiddleware = (req, res, next) => {
         console.log('[AUTH_MIDDLEWARE] No token found');
         return res.status(401).json({
             success: false,
-            message: 'Не выполнена авторизация. Отсутствует токен.'
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Не выполнена авторизация. Отсутствует токен.'
+            }
         });
     }
 
@@ -20,7 +23,10 @@ const authMiddleware = (req, res, next) => {
         console.log('[AUTH_MIDDLEWARE] Invalid token format');
         return res.status(401).json({
             success: false,
-            message: 'Не выполнена авторизация. Некорректный формат токена.'
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Не выполнена авторизация. Некорректный формат токена.'
+            }
         });
     }
 
@@ -33,24 +39,40 @@ const authMiddleware = (req, res, next) => {
 
         console.log('[AUTH_MIDDLEWARE] Decoded token:', decodedToken);
         
-        req.user = decodedToken;
+        req.user = {
+            userId: decodedToken.userId || decodedToken.id,
+            email: decodedToken.email,
+            roles: Array.isArray(decodedToken.roles) ? decodedToken.roles : 
+                  (decodedToken.role ? [decodedToken.role] : ['viewer'])
+        };
+
+        console.log('[AUTH_MIDDLEWARE] Normalized user:', req.user);
+        
         next();
     } catch (err) {
         console.error('[AUTH_MIDDLEWARE] JWT verification error:', err.message);
         
+        let errorCode = 'UNAUTHORIZED';
         let message = 'Некорректный токен.';
+        
         if (err.name === 'TokenExpiredError') {
+            errorCode = 'TOKEN_EXPIRED';
             message = 'Срок действия токена истек.';
         } else if (err.name === 'JsonWebTokenError') {
+            errorCode = 'INVALID_TOKEN';
             message = 'Недействительный токен.';
         } else if (err.name === 'NotBeforeError') {
+            errorCode = 'TOKEN_NOT_ACTIVE';
             message = 'Токен еще не действует.';
         }
 
         return res.status(401).json({
             success: false,
-            message: message,
-            error: err.message
+            error: {
+                code: errorCode,
+                message: message,
+                details: err.message
+            }
         });
     }
 };

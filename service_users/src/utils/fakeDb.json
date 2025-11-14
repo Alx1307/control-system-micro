@@ -1,20 +1,13 @@
 {
-  "96adfff5-6a5b-4907-9661-d987423a3a7e": {
-    "id": "96adfff5-6a5b-4907-9661-d987423a3a7e",
-    "email": "petrov@mail.ru",
-    "passwordHash": "$2b$10$xvHCdvcTa8VF3Pgo69raF.M2KNxCmh2Lf39lkzUdF2RsSnIovDp5O",
-    "name": "Сидоров Иван Дмитриевич",
-    "role": "manager",
-    "createdAt": "2025-11-07T09:21:36.859Z",
-    "updatedAt": "2025-11-07T10:36:52.214Z"
-  },
-  "931f1890-f51d-452d-91f1-a056063c9272": {
-    "id": "931f1890-f51d-452d-91f1-a056063c9272",
-    "email": "sidorov@mail.ru",
-    "passwordHash": "$2b$10$2A9ipxE41HiLWOTT.vM7sOBAjJ0YZiGtxjwoi059phdWl0dgXe5ia",
-    "name": "Сидоров Сидр Сидорович",
-    "role": "viewer",
-    "createdAt": "2025-11-07T10:20:50.655Z",
-    "updatedAt": "2025-11-07T10:20:50.655Z"
+  "95b00d8e-23b2-4c63-91c4-05481985c6dd": {
+    "id": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+    "email": "manager@example.com",
+    "passwordHash": "$2b$10$QnlZaoMGrx5c11aT/XfpweBt9/FMJ91iS/Nz7N7ury5BB86qnefGm",
+    "name": "Тестовый Менеджер",
+    "roles": [
+      "manager"
+    ],
+    "createdAt": "2025-11-14T10:06:21.922Z",
+    "updatedAt": "2025-11-14T10:06:21.922Z"
   }
 }

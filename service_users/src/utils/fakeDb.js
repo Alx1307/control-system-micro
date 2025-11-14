@@ -91,7 +91,9 @@ class FakeDb {
       let usersArray = Object.values(users);
       
       if (filters.role) {
-        usersArray = usersArray.filter(user => user.role === filters.role);
+        usersArray = usersArray.filter(user => 
+          user.roles && user.roles.includes(filters.role)
+        );
       }
       
       if (filters.email) {
@@ -189,38 +191,20 @@ class FakeDb {
     }
   }
 
-  async initializeDefaultData() {
+  async getAllManagers() {
     try {
       const users = await this.loadData();
-      
-      if (Object.keys(users).length === 0) {
-        console.log('[FAKE_DB] Инициализация тестовыми данными');
-        
-        const bcrypt = require('bcryptjs');
-        const testManager = {
-          id: 1,
-          email: 'manager@example.com',
-          passwordHash: await bcrypt.hash('manager123', 10),
-          name: 'Тестовый Менеджер',
-          role: 'manager',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        
-        users[1] = testManager;
-        await this.saveData(users);
-        
-        console.log('[FAKE_DB] Тестовый менеджер создан: manager@example.com / manager123');
-      }
+      const managers = Object.values(users).filter(user => 
+        user.roles && user.roles.includes('manager')
+      );
+      return managers;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при инициализации данных:', error);
+      console.error('[FAKE_DB] Ошибка при получении менеджеров:', error);
+      throw error;
     }
   }
 }
 
 const fakeDb = new FakeDb();
-
-fakeDb.initializeDefaultData().catch(console.error);
 
 module.exports = fakeDb;

@@ -2,12 +2,27 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const CircuitBreaker = require('opossum');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+const swaggerConfig = require('./swagger/config');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 
 app.use(cors());
 app.use(express.json());
+
+const swaggerSpec = swaggerJsdoc(swaggerConfig);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true,
+  customCss: '.swagger-ui .topbar { display: none }',
+  swaggerOptions: {
+    defaultModelsExpandDepth: -1
+  }
+}));
+
+require('./swagger/authEndpoints');
+require('./swagger/userEndpoints');
 
 const USERS_SERVICE_URL = 'http://service_users:8000/v1';
 const ORDERS_SERVICE_URL = 'http://service_orders:8000';
@@ -438,21 +453,7 @@ app.use((error, req, res, next) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`API Gateway running on port ${PORT}`);
-
-    // Log circuit breaker events for monitoring
-    usersCircuit.on('open', () => console.log('Users circuit breaker opened'));
-    usersCircuit.on('close', () => console.log('Users circuit breaker closed'));
-    usersCircuit.on('halfOpen', () => console.log('Users circuit breaker half-open'));
-    usersCircuit.on('failure', (error) => console.log('Users circuit failure:', error.message));
-    usersCircuit.on('success', () => console.log('Users circuit success'));
-    usersCircuit.on('fallback', () => console.log('Users circuit fallback'));
-
-    ordersCircuit.on('open', () => console.log('Orders circuit breaker opened'));
-    ordersCircuit.on('close', () => console.log('Orders circuit breaker closed'));
-    ordersCircuit.on('halfOpen', () => console.log('Orders circuit breaker half-open'));
-    ordersCircuit.on('failure', (error) => console.log('Orders circuit failure:', error.message));
-    ordersCircuit.on('success', () => console.log('Orders circuit success'));
-    ordersCircuit.on('fallback', () => console.log('Orders circuit fallback'));
+    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
 });
 
 app.use((req, res) => {

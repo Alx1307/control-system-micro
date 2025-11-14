@@ -5,7 +5,7 @@ const usersController = {
     try {
       console.log('[GET_USERS] Запрос на получение списка пользователей');
 
-      if (req.user.role !== 'manager') {
+      if (!req.user.roles.includes('manager')) {
         return res.error('FORBIDDEN', 'Доступ запрещен. Требуется роль менеджера', 403);
       }
 
@@ -19,14 +19,6 @@ const usersController = {
 
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
-
-      if (isNaN(pageNum) || pageNum < 1) {
-        return res.error('VALIDATION_ERROR', 'Параметр page должен быть положительным числом', 400);
-      }
-
-      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
-        return res.error('VALIDATION_ERROR', 'Параметр limit должен быть от 1 до 100', 400);
-      }
 
       const filters = {};
       if (role) filters.role = role;
@@ -50,12 +42,9 @@ const usersController = {
 
   async getCurrentProfile(req, res) {
     try {
-      console.log('[GET_PROFILE] Запрос на получение профиля пользователя:', req.user);
-      console.log('[GET_PROFILE] Ищем пользователя с ID:', req.user.userId);
+      console.log('[GET_PROFILE] Запрос на получение профиля пользователя:', req.user.userId);
   
       const user = await fakeDb.getUserById(req.user.userId);
-  
-      console.log('[GET_PROFILE] Найденный пользователь:', user);
   
       if (!user) {
         return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
@@ -75,19 +64,11 @@ const usersController = {
     try {
       console.log('[GET_USER_BY_ID] Запрос на получение пользователя:', req.params.userId);
   
-      if (req.user.role !== 'manager') {
+      if (!req.user.roles.includes('manager')) {
         return res.error('FORBIDDEN', 'Доступ запрещен. Требуется роль менеджера', 403);
       }
   
       const userId = req.params.userId;
-      
-      if (!userId || typeof userId !== 'string') {
-        return res.error('VALIDATION_ERROR', 'Некорректный ID пользователя', 400);
-      }
-  
-      if (userId.length !== 36 || userId.split('-').length !== 5) {
-        return res.error('VALIDATION_ERROR', 'Некорректный формат ID пользователя', 400);
-      }
   
       const user = await fakeDb.getUserById(userId);
   
@@ -111,33 +92,53 @@ const usersController = {
   
       const userId = req.params.userId;
       const currentUserId = req.user.userId;
-  
-      if (userId !== currentUserId) {
+      const currentUserRoles = req.user.roles;
+
+      if (userId !== currentUserId && !currentUserRoles.includes('manager')) {
         return res.error('FORBIDDEN', 'Вы можете обновлять только свой профиль', 403);
       }
+
+      const { name, email, roles } = req.body;
   
-      const { name, email } = req.body;
-  
-      if (!name && !email) {
+      if (!name && !email && !roles) {
         return res.error('VALIDATION_ERROR', 'Не указаны поля для обновления', 400);
       }
   
-      if (email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res.error('VALIDATION_ERROR', 'Некорректный формат email', 400);
+      if (roles && !currentUserRoles.includes('manager')) {
+        return res.error('FORBIDDEN', 'Изменение ролей доступно только менеджерам', 403);
+      }
+
+      if (roles && userId === currentUserId) {
+        return res.error('FORBIDDEN', 'Вы не можете изменить свои роли', 403);
+      }
+
+      const currentUserData = await fakeDb.getUserById(userId);
+      if (!currentUserData) {
+        return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
+      }
+
+      if (roles && currentUserRoles.includes('manager') && userId !== currentUserId) {
+        const isCurrentUserManager = currentUserData.roles.includes('manager');
+        const isNewRoleManager = Array.isArray(roles) ? roles.includes('manager') : false;
+        
+        if (isCurrentUserManager || isNewRoleManager) {
+          const allManagers = await fakeDb.getAllManagers();
+          const activeManagers = allManagers.filter(manager => 
+            manager.isActive !== false && manager.id !== currentUserId
+          );
+          
+          if (activeManagers.length === 0 && !isNewRoleManager) {
+            return res.error('FORBIDDEN', 'В системе должен оставаться хотя бы один активный менеджер', 403);
+          }
         }
       }
   
       const updates = {};
       if (name) updates.name = name;
       if (email) updates.email = email;
+      if (roles) updates.roles = Array.isArray(roles) ? roles : [roles];
   
       const updatedUser = await fakeDb.updateUser(userId, updates);
-  
-      if (!updatedUser) {
-        return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
-      }
   
       const { passwordHash, ...userProfile } = updatedUser;
   
@@ -154,36 +155,40 @@ const usersController = {
   async deleteUser(req, res) {
     try {
       console.log('[DELETE_USER] Запрос на удаление пользователя:', req.params.userId);
-  
-      if (req.user.role !== 'manager') {
+
+      if (!req.user.roles.includes('manager')) {
         return res.error('FORBIDDEN', 'Доступ запрещен. Требуется роль менеджера', 403);
       }
-  
+
       const userId = req.params.userId;
-      
-      if (!userId || typeof userId !== 'string') {
-        return res.error('VALIDATION_ERROR', 'Некорректный ID пользователя', 400);
-      }
-  
+
       if (userId === req.user.userId) {
         return res.error('FORBIDDEN', 'Вы не можете удалить свой аккаунт', 403);
       }
-  
-      const deletedUser = await fakeDb.deleteUser(userId);
-  
-      if (!deletedUser) {
+
+      const userToDelete = await fakeDb.getUserById(userId);
+      if (!userToDelete) {
         return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
       }
-  
+
+      if (userToDelete.roles.includes('manager')) {
+        const allManagers = await fakeDb.getAllManagers();
+        if (allManagers.length <= 1) {
+          return res.error('FORBIDDEN', 'Нельзя удалить последнего менеджера в системе', 403);
+        }
+      }
+
+      const deletedUser = await fakeDb.deleteUser(userId);
+
       console.log('[DELETE_USER] Пользователь успешно удален:', deletedUser.email);
-  
+
       res.success({ 
         deletedUser: { 
           id: deletedUser.id, 
           email: deletedUser.email 
         } 
       }, 'Пользователь удален успешно');
-  
+
     } catch (error) {
       console.error('[DELETE_USER] Ошибка:', error);
       res.error('DELETE_USER_ERROR', 'Ошибка при удалении пользователя', 500);
