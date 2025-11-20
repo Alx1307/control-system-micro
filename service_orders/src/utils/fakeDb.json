@@ -1,0 +1,83 @@
+{
+  "orders": {
+    "41534ac1-5bf4-425c-af99-63dc7023dcb7": {
+      "id": "41534ac1-5bf4-425c-af99-63dc7023dcb7",
+      "userId": "4e18153f-1b53-429d-a920-d87c5bc4ec58",
+      "items": [
+        {
+          "product": "Test Product",
+          "quantity": 2,
+          "price": 25.5
+        }
+      ],
+      "status": "created",
+      "totalAmount": 51,
+      "createdAt": "2025-11-19T09:03:05.593Z",
+      "updatedAt": "2025-11-19T09:03:05.593Z"
+    },
+    "e35bcd66-25b1-4869-a380-2a936767396a": {
+      "id": "e35bcd66-25b1-4869-a380-2a936767396a",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Test Product 2",
+          "quantity": 1,
+          "price": 0.19
+        }
+      ],
+      "status": "created",
+      "totalAmount": 0.19,
+      "createdAt": "2025-11-20T17:51:26.702Z",
+      "updatedAt": "2025-11-20T17:51:26.702Z"
+    },
+    "8e0ac1d8-310e-496f-9193-9bf70e56f5af": {
+      "id": "8e0ac1d8-310e-496f-9193-9bf70e56f5af",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Test Product 3",
+          "quantity": 1,
+          "price": 100.01
+        }
+      ],
+      "assignedEngineerId": null,
+      "status": "created",
+      "totalAmount": 100.01,
+      "createdAt": "2025-11-20T18:55:58.382Z",
+      "updatedAt": "2025-11-20T18:55:58.382Z"
+    },
+    "d32751fe-7ea4-4dd8-b253-04a4a49dea5d": {
+      "id": "d32751fe-7ea4-4dd8-b253-04a4a49dea5d",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Test Product 3",
+          "quantity": 1,
+          "price": 100.01
+        }
+      ],
+      "assignedEngineerId": "208825d3-d9d9-471c-b4fb-ccd61efb0fde",
+      "status": "in_progress",
+      "totalAmount": 100.01,
+      "createdAt": "2025-11-20T19:11:44.991Z",
+      "updatedAt": "2025-11-20T20:38:37.482Z"
+    },
+    "d89cdffd-a123-45b8-a7d0-6a48c0f90158": {
+      "id": "d89cdffd-a123-45b8-a7d0-6a48c0f90158",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Test Product 5",
+          "quantity": 1,
+          "price": 100.01
+        }
+      ],
+      "assignedEngineerId": null,
+      "status": "created",
+      "totalAmount": 100.01,
+      "createdAt": "2025-11-20T19:19:07.978Z",
+      "updatedAt": "2025-11-20T19:19:07.978Z"
+    }
+  },
+  "users": {}
+}

@@ -9,5 +9,27 @@
     ],
     "createdAt": "2025-11-14T10:06:21.922Z",
     "updatedAt": "2025-11-14T10:06:21.922Z"
+  },
+  "4e18153f-1b53-429d-a920-d87c5bc4ec58": {
+    "id": "4e18153f-1b53-429d-a920-d87c5bc4ec58",
+    "email": "testuser@example.com",
+    "passwordHash": "$2b$10$jkkjAYYNMaI9jxZBI2oodOgnnrGY3dlUYgKm6dZC3/2faEMkRZF86",
+    "name": "Тестовый Пользователь",
+    "roles": [
+      "viewer"
+    ],
+    "createdAt": "2025-11-18T21:02:18.552Z",
+    "updatedAt": "2025-11-18T21:02:18.552Z"
+  },
+  "208825d3-d9d9-471c-b4fb-ccd61efb0fde": {
+    "id": "208825d3-d9d9-471c-b4fb-ccd61efb0fde",
+    "email": "testuser2@example.com",
+    "passwordHash": "$2b$10$f0c5ZjZN25/46MFArJZTaOQrJkELs7nE9SaspQLtn/DEHj0ItdQlG",
+    "name": "Имя изменено менеджером",
+    "roles": [
+      "engineer"
+    ],
+    "createdAt": "2025-11-19T08:55:01.465Z",
+    "updatedAt": "2025-11-20T19:13:26.998Z"
   }
 }

@@ -20,6 +20,10 @@ const usersController = {
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
 
+      if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
+        return res.error('VALIDATION_ERROR', 'Некорректные параметры пагинации', 400);
+      }
+
       const filters = {};
       if (role) filters.role = role;
       if (email) filters.email = email;
@@ -27,10 +31,12 @@ const usersController = {
 
       const result = await fakeDb.getAllUsers(pageNum, limitNum, filters);
 
+      const usersWithoutPasswords = result.users.map(({ passwordHash, ...user }) => user);
+
       console.log(`[GET_USERS] Найдено ${result.pagination.totalUsers} пользователей`);
 
       res.success({
-        users: result.users,
+        users: usersWithoutPasswords,
         pagination: result.pagination
       }, 'Список пользователей получен успешно');
 
@@ -140,6 +146,10 @@ const usersController = {
   
       const updatedUser = await fakeDb.updateUser(userId, updates);
   
+      if (!updatedUser) {
+        return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
+      }
+
       const { passwordHash, ...userProfile } = updatedUser;
   
       console.log('[UPDATE_PROFILE] Профиль успешно обновлен');
@@ -180,13 +190,16 @@ const usersController = {
 
       const deletedUser = await fakeDb.deleteUser(userId);
 
+      if (!deletedUser) {
+        return res.error('USER_NOT_FOUND', 'Пользователь не найден', 404);
+      }
+
       console.log('[DELETE_USER] Пользователь успешно удален:', deletedUser.email);
 
+      const { passwordHash, ...userWithoutPassword } = deletedUser;
+
       res.success({ 
-        deletedUser: { 
-          id: deletedUser.id, 
-          email: deletedUser.email 
-        } 
+        deletedUser: userWithoutPassword
       }, 'Пользователь удален успешно');
 
     } catch (error) {

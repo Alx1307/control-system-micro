@@ -23,9 +23,10 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 
 require('./swagger/authEndpoints');
 require('./swagger/userEndpoints');
+// require('./swagger/orderEndpoints');
 
 const USERS_SERVICE_URL = 'http://service_users:8000/v1';
-const ORDERS_SERVICE_URL = 'http://service_orders:8000';
+const ORDERS_SERVICE_URL = 'http://service_orders:8001/v1';
 
 const circuitOptions = {
     timeout: 5000,
@@ -33,13 +34,11 @@ const circuitOptions = {
     resetTimeout: 30000,
 };
 
-// Improved Circuit Breaker for users service
 const usersCircuit = new CircuitBreaker(async (url, options = {}) => {
     try {
         const response = await axios({
             url,
             ...options,
-            // Accept all status codes - we'll handle them in the route
             validateStatus: () => true
         });
         
@@ -49,7 +48,6 @@ const usersCircuit = new CircuitBreaker(async (url, options = {}) => {
             headers: response.headers
         };
     } catch (error) {
-        // Only throw for network errors, timeouts, etc.
         if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
             throw new Error('Service unavailable');
         }
@@ -84,7 +82,6 @@ const ordersCircuit = new CircuitBreaker(async (url, options = {}) => {
     }
 }, circuitOptions);
 
-// Fallback functions
 usersCircuit.fallback(() => ({ 
     success: false,
     error: {
@@ -101,7 +98,6 @@ ordersCircuit.fallback(() => ({
     }
 }));
 
-// Auth Routes
 app.post('/v1/auth/register', async (req, res) => {
     try {
         const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/register`, {
@@ -112,12 +108,10 @@ app.post('/v1/auth/register', async (req, res) => {
             }
         });
 
-        // If circuit breaker returned fallback
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
         }
 
-        // Forward the exact status and data from users service
         res.status(result.status).json(result.data);
 
     } catch (error) {
@@ -142,12 +136,10 @@ app.post('/v1/auth/login', async (req, res) => {
             }
         });
 
-        // If circuit breaker returned fallback
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
         }
 
-        // Forward the exact status and data from users service
         res.status(result.status).json(result.data);
 
     } catch (error) {
@@ -162,7 +154,6 @@ app.post('/v1/auth/login', async (req, res) => {
     }
 });
 
-// Health checks
 app.get('/v1/users/health', async (req, res) => {
     try {
         const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/health`, {
@@ -176,7 +167,7 @@ app.get('/v1/users/health', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway health check error:', error.message);
+        console.error('Gateway users health check error:', error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -187,7 +178,6 @@ app.get('/v1/users/health', async (req, res) => {
     }
 });
 
-// Debug route - добавлен этот маршрут
 app.get('/v1/users/debug', async (req, res) => {
     try {
         console.log('[GATEWAY_DEBUG] Headers:', req.headers);
@@ -218,7 +208,6 @@ app.get('/v1/users/debug', async (req, res) => {
     }
 });
 
-// Users service routes
 app.get('/v1/users/users', async (req, res) => {
     try {
         const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users`, {
@@ -356,7 +345,6 @@ app.delete('/v1/users/users/:userId', async (req, res) => {
     }
 });
 
-// Debug endpoint to check all users
 app.get('/v1/auth/debug-users', async (req, res) => {
     try {
         const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/debug-users`, {
@@ -381,10 +369,9 @@ app.get('/v1/auth/debug-users', async (req, res) => {
     }
 });
 
-// Orders service routes (пример)
 app.get('/v1/orders/health', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/health`, {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/health`, {
             method: 'GET'
         });
 
@@ -406,7 +393,298 @@ app.get('/v1/orders/health', async (req, res) => {
     }
 });
 
-// API Gateway health check
+app.get('/v1/orders/status', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/status`, {
+            method: 'GET'
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway orders status error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.post('/v1/orders', async (req, res) => {
+    try {
+        console.log('[GATEWAY] Creating order...');
+        
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders`, {
+            method: 'POST',
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        console.log('[GATEWAY] Order service response status:', result.status);
+        console.log('[GATEWAY] Order service response data:', result.data);
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway create order error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/orders/user', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/user`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            },
+            params: req.query
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway get user orders error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/orders/all', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/all`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            },
+            params: req.query
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway get all orders error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/orders/statistics', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/statistics`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway orders statistics error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.get('/v1/orders/:orderId', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway get order by ID error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.put('/v1/orders/:orderId', async (req, res) => {
+    try {
+        console.log('[GATEWAY] Updating order:', req.params.orderId);
+        
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
+            method: 'PUT',
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        console.log('[GATEWAY] Update order response status:', result.status);
+        console.log('[GATEWAY] Update order response data:', result.data);
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway update order error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.patch('/v1/orders/:orderId/assign', async (req, res) => {
+    try {
+        console.log('[GATEWAY] Assigning engineer to order:', req.params.orderId);
+        
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/assign`, {
+            method: 'PATCH',
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        console.log('[GATEWAY] Assign engineer response status:', result.status);
+        console.log('[GATEWAY] Assign engineer response data:', result.data);
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway assign engineer error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.patch('/v1/orders/:orderId/status', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/status`, {
+            method: 'PATCH',
+            data: req.body,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway update order status error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
+app.patch('/v1/orders/:orderId/cancel', async (req, res) => {
+    try {
+        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/cancel`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': req.headers['authorization']
+            }
+        });
+
+        if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
+            return res.status(503).json(result.data);
+        }
+
+        res.status(result.status).json(result.data);
+
+    } catch (error) {
+        console.error('Gateway cancel order error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error'
+            }
+        });
+    }
+});
+
 app.get('/health', (req, res) => {
     res.json({
         success: true,
@@ -438,7 +716,6 @@ app.get('/status', (req, res) => {
     });
 });
 
-// Error handling middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
     res.status(500).json({
@@ -450,12 +727,6 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`API Gateway running on port ${PORT}`);
-    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
-});
-
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -464,4 +735,9 @@ app.use((req, res) => {
             message: 'Route not found'
         }
     });
+});
+
+app.listen(PORT, () => {
+    console.log(`API Gateway running on port ${PORT}`);
+    console.log(`Swagger documentation available at http://localhost:${PORT}/api-docs`);
 });

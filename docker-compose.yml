@@ -23,8 +23,11 @@ services:
     build: service_orders
     environment:
       - NODE_ENV=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     networks:
       - app-network
+    volumes:
+    - ./service_orders/src/utils:/app/src/utils
 
 networks:
   app-network:

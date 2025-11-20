@@ -29,13 +29,9 @@ class FakeDb {
 
   async addUser(user) {
     try {
-      console.log('[FAKE_DB] Добавление пользователя:', user.email);
-      
       const users = await this.loadData();
       users[user.id] = user;
       await this.saveData(users);
-      
-      console.log('[FAKE_DB] Пользователь успешно добавлен');
       return user;
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при добавлении пользователя:', error);
@@ -45,17 +41,8 @@ class FakeDb {
 
   async getUserByEmail(email) {
     try {
-      console.log('[FAKE_DB] Поиск пользователя по email:', email);
-      
       const users = await this.loadData();
       const user = Object.values(users).find(user => user.email === email);
-      
-      if (user) {
-        console.log('[FAKE_DB] Пользователь найден:', user.id);
-      } else {
-        console.log('[FAKE_DB] Пользователь не найден');
-      }
-      
       return user || null;
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при поиске пользователя по email:', error);
@@ -65,17 +52,8 @@ class FakeDb {
 
   async getUserById(id) {
     try {
-      console.log('[FAKE_DB] Поиск пользователя по ID:', id);
-      
       const users = await this.loadData();
       const user = users[id];
-      
-      if (user) {
-        console.log('[FAKE_DB] Пользователь найден:', user.email);
-      } else {
-        console.log('[FAKE_DB] Пользователь не найден');
-      }
-      
       return user || null;
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при поиске пользователя по ID:', error);
@@ -85,8 +63,6 @@ class FakeDb {
 
   async getAllUsers(page = 1, limit = 10, filters = {}) {
     try {
-      console.log('[FAKE_DB] Получение списка пользователей:', { page, limit, filters });
-      
       const users = await this.loadData();
       let usersArray = Object.values(users);
       
@@ -112,10 +88,8 @@ class FakeDb {
       const endIndex = startIndex + limit;
       const paginatedUsers = usersArray.slice(startIndex, endIndex);
 
-      const usersWithoutPasswords = paginatedUsers.map(({ passwordHash, ...user }) => user);
-
-      const result = {
-        users: usersWithoutPasswords,
+      return {
+        users: paginatedUsers,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(usersArray.length / limit),
@@ -124,10 +98,6 @@ class FakeDb {
           hasPrev: page > 1
         }
       };
-
-      console.log(`[FAKE_DB] Найдено ${result.pagination.totalUsers} пользователей`);
-      
-      return result;
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при получении списка пользователей:', error);
       throw error;
@@ -136,12 +106,9 @@ class FakeDb {
 
   async updateUser(id, updates) {
     try {
-      console.log('[FAKE_DB] Обновление пользователя:', { id, updates });
-      
       const users = await this.loadData();
       
       if (!users[id]) {
-        console.log('[FAKE_DB] Пользователь не найден для обновления');
         return null;
       }
 
@@ -158,8 +125,6 @@ class FakeDb {
       }
 
       await this.saveData(users);
-      
-      console.log('[FAKE_DB] Пользователь успешно обновлен');
       return { ...users[id] };
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при обновлении пользователя:', error);
@@ -169,12 +134,9 @@ class FakeDb {
 
   async deleteUser(id) {
     try {
-      console.log('[FAKE_DB] Удаление пользователя:', id);
-      
       const users = await this.loadData();
       
       if (!users[id]) {
-        console.log('[FAKE_DB] Пользователь не найден для удаления');
         return null;
       }
 
@@ -182,8 +144,6 @@ class FakeDb {
       delete users[id];
       
       await this.saveData(users);
-      
-      console.log('[FAKE_DB] Пользователь успешно удален:', deletedUser.email);
       return deletedUser;
     } catch (error) {
       console.error('[FAKE_DB] Ошибка при удалении пользователя:', error);
