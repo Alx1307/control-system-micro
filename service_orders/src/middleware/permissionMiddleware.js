@@ -5,6 +5,7 @@ const checkOrderPermission = async (req, res, next) => {
     try {
         const orderId = req.params.orderId || req.params.id;
         console.log('[PERMISSION_MIDDLEWARE] Checking permission for order:', orderId);
+        console.log('[PERMISSION_MIDDLEWARE] User:', req.user.userId, 'Roles:', req.user.roles);
         
         const order = await fakeDb.getOrderById(orderId);
         
@@ -21,23 +22,44 @@ const checkOrderPermission = async (req, res, next) => {
 
         const isOwner = order.userId === req.user.userId;
         const isManager = req.user.roles.includes('manager');
-        
-        console.log('[PERMISSION_MIDDLEWARE] User:', req.user.userId, 'IsOwner:', isOwner, 'IsManager:', isManager);
+        const isViewer = req.user.roles.includes('viewer');
+        const isAssignedEngineer = order.assignedEngineerId === req.user.userId;
 
-        if (!isOwner && !isManager) {
-            console.log('[PERMISSION_MIDDLEWARE] Access denied');
+        console.log('[PERMISSION_MIDDLEWARE] Проверка прав:', {
+            isOwner,
+            isManager, 
+            isViewer,
+            isAssignedEngineer,
+            orderUserId: order.userId,
+            assignedEngineerId: order.assignedEngineerId
+        });
+
+        if (isOwner || isManager || isViewer || isAssignedEngineer) {
+            console.log('[PERMISSION_MIDDLEWARE] Access granted');
+            req.order = order;
+            return next();
+        }
+
+        if (req.user.roles.includes('engineer') && !isAssignedEngineer) {
+            console.log('[PERMISSION_MIDDLEWARE] Инженер не назначен на заказ');
             return res.status(403).json({
                 success: false,
                 error: {
                     code: 'ACCESS_DENIED',
-                    message: 'Доступ к заказу запрещен.'
+                    message: 'Инженер может просматривать только назначенные заказы.'
                 }
             });
         }
 
-        req.order = order;
-        console.log('[PERMISSION_MIDDLEWARE] Access granted');
-        next();
+        console.log('[PERMISSION_MIDDLEWARE] Access denied');
+        return res.status(403).json({
+            success: false,
+            error: {
+                code: 'ACCESS_DENIED',
+                message: 'Доступ к заказу запрещен.'
+            }
+        });
+
     } catch (error) {
         console.error('[PERMISSION_MIDDLEWARE] Error:', error.message);
         return res.status(500).json({

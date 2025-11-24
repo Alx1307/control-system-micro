@@ -3,11 +3,16 @@ const router = express.Router();
 
 const usersController = require('../controllers/userController');
 const authenticateToken = require('../middleware/authMiddleware');
+const { 
+    validateGetUsers, 
+    validateUserId, 
+    validateUpdateProfile 
+} = require('../middleware/validationMiddleware');
 
-router.get('/users', authenticateToken, usersController.getUsers);
+router.get('/users', authenticateToken, validateGetUsers, usersController.getUsers);
 router.get('/profile', authenticateToken, usersController.getCurrentProfile);
-router.get('/users/:userId', authenticateToken, usersController.getUserById);
-router.put('/users/:userId', authenticateToken, usersController.updateProfile);
-router.delete('/users/:userId', authenticateToken, usersController.deleteUser);
+router.get('/users/:userId', authenticateToken, validateUserId, usersController.getUserById);
+router.put('/users/:userId', authenticateToken, validateUserId, validateUpdateProfile, usersController.updateProfile);
+router.delete('/users/:userId', authenticateToken, validateUserId, usersController.deleteUser);
 
 module.exports = router;

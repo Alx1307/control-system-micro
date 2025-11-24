@@ -63,6 +63,10 @@ const updateProfileSchema = Joi.object({
     email: Joi.string().email().optional()
         .messages({
             'string.email': 'Некорректный формат email'
+        }),
+    roles: Joi.array().items(Joi.string().valid('manager', 'viewer', 'engineer')).optional()
+        .messages({
+            'array.includes': 'Роли должны быть одной из: manager, viewer, engineer'
         })
 }).min(1)
 .messages({

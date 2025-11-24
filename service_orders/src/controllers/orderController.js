@@ -127,30 +127,15 @@ const ordersController = {
     try {
       console.log('[GET_ORDER_BY_ID] Запрос на получение заказа:', req.params.orderId);
 
-      const orderId = req.params.orderId;
-      const order = await fakeDb.getOrderById(orderId);
+      const order = req.order || await fakeDb.getOrderById(req.params.orderId);
 
       if (!order) {
+        console.log('[GET_ORDER_BY_ID] Заказ не найден');
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
 
-      const isOwner = order.userId === req.user.userId;
-      const isAssignedEngineer = order.assignedEngineerId === req.user.userId;
-      const isManager = req.user.roles.includes('manager');
-      const isViewer = req.user.roles.includes('viewer');
-
-      if (req.user.roles.includes('engineer') && !isAssignedEngineer) {
-        return res.error('FORBIDDEN', 'Доступ к заказу запрещен', 403);
-      }
-
-      if (!isOwner && !isManager && !isViewer && !isAssignedEngineer) {
-        return res.error('FORBIDDEN', 'Доступ к заказу запрещен', 403);
-      }
-
-      res.success(
-        { order },
-        'Заказ получен успешно'
-      );
+      console.log('[GET_ORDER_BY_ID] Доступ разрешен, возвращаем заказ');
+      res.success({ order }, 'Заказ получен успешно');
 
     } catch (error) {
       console.error('[GET_ORDER_BY_ID] Ошибка:', error);
@@ -326,14 +311,12 @@ const ordersController = {
       console.log('[UPDATE_ORDER] Запрос на обновление заказа:', req.params.orderId);
 
       const orderId = req.params.orderId;
-      const { items, assignedEngineerId } = req.body;
+      const { items } = req.body;
 
       const orderData = await fakeDb.getOrderById(orderId);
       if (!orderData) {
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
-
-      const order = new Order(orderData);
 
       if (!req.user.roles.includes('manager')) {
         return res.error('FORBIDDEN', 'Только менеджеры могут изменять заказы', 403);
@@ -342,44 +325,12 @@ const ordersController = {
       const updates = {};
       if (items) updates.items = items;
 
-      if (assignedEngineerId) {
-        try {
-          const usersServiceUrl = process.env.USERS_SERVICE_URL || 'http://service_users:8000';
-          const response = await axios.get(`${usersServiceUrl}/v1/users/users/${assignedEngineerId}`, {
-            headers: {
-              'Authorization': req.headers['authorization']
-            },
-            timeout: 5000
-          });
-
-          if (!response.data.success) {
-            return res.error('ENGINEER_NOT_FOUND', 'Указанный инженер не найден', 404);
-          }
-
-          const engineer = response.data.data.user;
-          if (!engineer.roles.includes('engineer')) {
-            return res.error('NOT_AN_ENGINEER', 'Указанный пользователь не является инженером', 400);
-          }
-
-          console.log('[UPDATE_ORDER] Инженер найден:', engineer.id, engineer.email);
-          updates.assignedEngineerId = assignedEngineerId;
-
-        } catch (error) {
-          if (error.response && error.response.status === 404) {
-            return res.error('ENGINEER_NOT_FOUND', 'Указанный инженер не найден', 404);
-          }
-          console.error('[UPDATE_ORDER] Ошибка проверки инженера:', error.message);
-          return res.error('ENGINEER_VALIDATION_ERROR', 'Ошибка при проверке инженера', 500);
-        }
-      }
-
       const updatedOrder = await fakeDb.updateOrder(orderId, updates);
 
       eventEmitter.emit(OrderEvents.ORDER_UPDATED, {
         orderId: updatedOrder.id,
         updatedFields: Object.keys(updates),
-        userId: req.user.userId,
-        assignedEngineerId: assignedEngineerId
+        userId: req.user.userId
       });
 
       console.log('[UPDATE_ORDER] Заказ успешно обновлен:', orderId);

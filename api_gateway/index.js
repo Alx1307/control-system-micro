@@ -23,7 +23,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 
 require('./swagger/authEndpoints');
 require('./swagger/userEndpoints');
-// require('./swagger/orderEndpoints');
+require('./swagger/orderEndpoints');
 
 const USERS_SERVICE_URL = 'http://service_users:8000/v1';
 const ORDERS_SERVICE_URL = 'http://service_orders:8001/v1';

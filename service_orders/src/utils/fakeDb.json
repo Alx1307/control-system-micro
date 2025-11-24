@@ -77,6 +77,38 @@
       "totalAmount": 100.01,
       "createdAt": "2025-11-20T19:19:07.978Z",
       "updatedAt": "2025-11-20T19:19:07.978Z"
+    },
+    "ec18c35e-cd25-4a42-8e05-413655b39871": {
+      "id": "ec18c35e-cd25-4a42-8e05-413655b39871",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Test Product 6",
+          "quantity": 1,
+          "price": 100.01
+        }
+      ],
+      "assignedEngineerId": null,
+      "status": "cancelled",
+      "totalAmount": 100.01,
+      "createdAt": "2025-11-23T19:11:17.099Z",
+      "updatedAt": "2025-11-24T09:45:48.217Z"
+    },
+    "b68a69ba-8aa2-44fe-bcaa-c79a4d7bddf5": {
+      "id": "b68a69ba-8aa2-44fe-bcaa-c79a4d7bddf5",
+      "userId": "95b00d8e-23b2-4c63-91c4-05481985c6dd",
+      "items": [
+        {
+          "product": "Updated Product",
+          "quantity": 2,
+          "price": 50
+        }
+      ],
+      "assignedEngineerId": "208825d3-d9d9-471c-b4fb-ccd61efb0fde",
+      "status": "completed",
+      "totalAmount": 100.01,
+      "createdAt": "2025-11-23T19:11:50.229Z",
+      "updatedAt": "2025-11-24T09:35:27.930Z"
     }
   },
   "users": {}
