@@ -5,12 +5,37 @@ const CircuitBreaker = require('opossum');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const swaggerConfig = require('./swagger/config');
+const requestIdMiddleware = require('./middleware/requestId');
+const loggerMiddleware = require('./middleware/logger');
+const { 
+    generalLimiter, 
+    authLimiter, 
+    orderCreationLimiter, 
+    adminLimiter 
+} = require('./middleware/rateLimit');
+const {
+    securityHeaders,
+    httpParamProtection,
+    noSqlInjectionProtection,
+    xssProtection,
+    inputValidation
+} = require('./middleware/security');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+app.use(securityHeaders);
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(httpParamProtection);
+app.use(noSqlInjectionProtection);
+app.use(xssProtection);
+
+app.use(requestIdMiddleware);
+app.use(inputValidation);
+
+app.use(loggerMiddleware);
+app.use(generalLimiter);
 
 const swaggerSpec = swaggerJsdoc(swaggerConfig);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -32,6 +57,18 @@ const circuitOptions = {
     timeout: 5000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
+};
+
+const makeServiceCall = async (circuit, url, options = {}, requestId) => {
+    const defaultHeaders = {
+        'X-Request-ID': requestId,
+        'Content-Type': 'application/json'
+    };
+    
+    return await circuit.fire(url, {
+        ...options,
+        headers: { ...defaultHeaders, ...options.headers }
+    });
 };
 
 const usersCircuit = new CircuitBreaker(async (url, options = {}) => {
@@ -98,15 +135,17 @@ ordersCircuit.fallback(() => ({
     }
 }));
 
-app.post('/v1/auth/register', async (req, res) => {
+app.post('/v1/auth/register', authLimiter, async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/register`, {
-            method: 'POST',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/auth/register`,
+            {
+                method: 'POST',
+                data: req.body
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -115,7 +154,7 @@ app.post('/v1/auth/register', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway register error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Register error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -126,15 +165,17 @@ app.post('/v1/auth/register', async (req, res) => {
     }
 });
 
-app.post('/v1/auth/login', async (req, res) => {
+app.post('/v1/auth/login', authLimiter, async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/login`, {
-            method: 'POST',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/auth/login`,
+            {
+                method: 'POST',
+                data: req.body
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -143,7 +184,7 @@ app.post('/v1/auth/login', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway login error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Login error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -156,9 +197,12 @@ app.post('/v1/auth/login', async (req, res) => {
 
 app.get('/v1/users/health', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/health`, {
-            method: 'GET'
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/health`,
+            { method: 'GET' },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -167,7 +211,7 @@ app.get('/v1/users/health', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway users health check error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Users health check error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -180,24 +224,24 @@ app.get('/v1/users/health', async (req, res) => {
 
 app.get('/v1/users/debug', async (req, res) => {
     try {
-        console.log('[GATEWAY_DEBUG] Headers:', req.headers);
-        
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/debug`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/debug`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
         }
 
-        console.log('[GATEWAY_DEBUG] Response from users service:', result.data);
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway debug error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Debug error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -208,14 +252,17 @@ app.get('/v1/users/debug', async (req, res) => {
     }
 });
 
-app.get('/v1/users/users', async (req, res) => {
+app.get('/v1/users/users', adminLimiter, async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/users`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -224,7 +271,7 @@ app.get('/v1/users/users', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway users list error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Users list error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -237,12 +284,15 @@ app.get('/v1/users/users', async (req, res) => {
 
 app.get('/v1/users/profile', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/profile`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/profile`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -251,7 +301,7 @@ app.get('/v1/users/profile', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway profile error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Profile error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -264,12 +314,15 @@ app.get('/v1/users/profile', async (req, res) => {
 
 app.get('/v1/users/users/:userId', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/users/${req.params.userId}`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -278,7 +331,7 @@ app.get('/v1/users/users/:userId', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway get user by ID error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Get user by ID error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -291,14 +344,19 @@ app.get('/v1/users/users/:userId', async (req, res) => {
 
 app.put('/v1/users/users/:userId', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
-            method: 'PUT',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/users/${req.params.userId}`,
+            {
+                method: 'PUT',
+                data: req.body,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization']
+                }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -307,7 +365,7 @@ app.put('/v1/users/users/:userId', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway update profile error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Update profile error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -320,12 +378,15 @@ app.put('/v1/users/users/:userId', async (req, res) => {
 
 app.delete('/v1/users/users/:userId', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/users/users/${req.params.userId}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/users/users/${req.params.userId}`,
+            {
+                method: 'DELETE',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -334,7 +395,7 @@ app.delete('/v1/users/users/:userId', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway delete user error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Delete user error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -347,9 +408,12 @@ app.delete('/v1/users/users/:userId', async (req, res) => {
 
 app.get('/v1/auth/debug-users', async (req, res) => {
     try {
-        const result = await usersCircuit.fire(`${USERS_SERVICE_URL}/auth/debug-users`, {
-            method: 'GET'
-        });
+        const result = await makeServiceCall(
+            usersCircuit,
+            `${USERS_SERVICE_URL}/auth/debug-users`,
+            { method: 'GET' },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -358,7 +422,7 @@ app.get('/v1/auth/debug-users', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway debug users error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Debug users error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -371,9 +435,12 @@ app.get('/v1/auth/debug-users', async (req, res) => {
 
 app.get('/v1/orders/health', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/health`, {
-            method: 'GET'
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/health`,
+            { method: 'GET' },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -382,7 +449,7 @@ app.get('/v1/orders/health', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway orders health check error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Orders health check error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -395,9 +462,12 @@ app.get('/v1/orders/health', async (req, res) => {
 
 app.get('/v1/orders/status', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/status`, {
-            method: 'GET'
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/status`,
+            { method: 'GET' },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -406,7 +476,7 @@ app.get('/v1/orders/status', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway orders status error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Orders status error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -417,21 +487,21 @@ app.get('/v1/orders/status', async (req, res) => {
     }
 });
 
-app.post('/v1/orders', async (req, res) => {
+app.post('/v1/orders', orderCreationLimiter, async (req, res) => {
     try {
-        console.log('[GATEWAY] Creating order...');
-        
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders`, {
-            method: 'POST',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers['authorization']
-            }
-        });
-
-        console.log('[GATEWAY] Order service response status:', result.status);
-        console.log('[GATEWAY] Order service response data:', result.data);
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders`,
+            {
+                method: 'POST',
+                data: req.body,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization']
+                }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -440,7 +510,7 @@ app.post('/v1/orders', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway create order error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Create order error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -453,13 +523,16 @@ app.post('/v1/orders', async (req, res) => {
 
 app.get('/v1/orders/user', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/user`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/user`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] },
+                params: req.query
             },
-            params: req.query
-        });
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -468,7 +541,7 @@ app.get('/v1/orders/user', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway get user orders error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Get user orders error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -479,15 +552,18 @@ app.get('/v1/orders/user', async (req, res) => {
     }
 });
 
-app.get('/v1/orders/all', async (req, res) => {
+app.get('/v1/orders/all', adminLimiter, async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/all`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/all`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] },
+                params: req.query
             },
-            params: req.query
-        });
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -496,7 +572,7 @@ app.get('/v1/orders/all', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway get all orders error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Get all orders error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -507,14 +583,17 @@ app.get('/v1/orders/all', async (req, res) => {
     }
 });
 
-app.get('/v1/orders/statistics', async (req, res) => {
+app.get('/v1/orders/statistics', adminLimiter, async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/statistics`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/statistics`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -523,7 +602,7 @@ app.get('/v1/orders/statistics', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway orders statistics error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Orders statistics error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -536,12 +615,15 @@ app.get('/v1/orders/statistics', async (req, res) => {
 
 app.get('/v1/orders/:orderId', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`,
+            {
+                method: 'GET',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -550,7 +632,7 @@ app.get('/v1/orders/:orderId', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway get order by ID error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Get order by ID error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -563,19 +645,19 @@ app.get('/v1/orders/:orderId', async (req, res) => {
 
 app.put('/v1/orders/:orderId', async (req, res) => {
     try {
-        console.log('[GATEWAY] Updating order:', req.params.orderId);
-        
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`, {
-            method: 'PUT',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers['authorization']
-            }
-        });
-
-        console.log('[GATEWAY] Update order response status:', result.status);
-        console.log('[GATEWAY] Update order response data:', result.data);
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/${req.params.orderId}`,
+            {
+                method: 'PUT',
+                data: req.body,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization']
+                }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -584,7 +666,7 @@ app.put('/v1/orders/:orderId', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway update order error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Update order error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -597,19 +679,19 @@ app.put('/v1/orders/:orderId', async (req, res) => {
 
 app.patch('/v1/orders/:orderId/assign', async (req, res) => {
     try {
-        console.log('[GATEWAY] Assigning engineer to order:', req.params.orderId);
-        
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/assign`, {
-            method: 'PATCH',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers['authorization']
-            }
-        });
-
-        console.log('[GATEWAY] Assign engineer response status:', result.status);
-        console.log('[GATEWAY] Assign engineer response data:', result.data);
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/assign`,
+            {
+                method: 'PATCH',
+                data: req.body,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization']
+                }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -618,7 +700,7 @@ app.patch('/v1/orders/:orderId/assign', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway assign engineer error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Assign engineer error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -631,14 +713,19 @@ app.patch('/v1/orders/:orderId/assign', async (req, res) => {
 
 app.patch('/v1/orders/:orderId/status', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/status`, {
-            method: 'PATCH',
-            data: req.body,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/status`,
+            {
+                method: 'PATCH',
+                data: req.body,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization']
+                }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -647,7 +734,7 @@ app.patch('/v1/orders/:orderId/status', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway update order status error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Update order status error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -660,12 +747,15 @@ app.patch('/v1/orders/:orderId/status', async (req, res) => {
 
 app.patch('/v1/orders/:orderId/cancel', async (req, res) => {
     try {
-        const result = await ordersCircuit.fire(`${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/cancel`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': req.headers['authorization']
-            }
-        });
+        const result = await makeServiceCall(
+            ordersCircuit,
+            `${ORDERS_SERVICE_URL}/orders/${req.params.orderId}/cancel`,
+            {
+                method: 'PATCH',
+                headers: { 'Authorization': req.headers['authorization'] }
+            },
+            req.requestId
+        );
 
         if (result.data && result.data.error && result.data.error.code === 'SERVICE_UNAVAILABLE') {
             return res.status(503).json(result.data);
@@ -674,7 +764,7 @@ app.patch('/v1/orders/:orderId/cancel', async (req, res) => {
         res.status(result.status).json(result.data);
 
     } catch (error) {
-        console.error('Gateway cancel order error:', error.message);
+        console.error(`[GATEWAY][${req.requestId}] Cancel order error:`, error.message);
         res.status(500).json({
             success: false,
             error: {
@@ -717,7 +807,7 @@ app.get('/status', (req, res) => {
 });
 
 app.use((error, req, res, next) => {
-    console.error('Unhandled error:', error);
+    console.error(`[GATEWAY][${req.requestId}] Unhandled error:`, error);
     res.status(500).json({
         success: false,
         error: {

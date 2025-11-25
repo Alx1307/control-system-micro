@@ -25,11 +25,11 @@
     "id": "208825d3-d9d9-471c-b4fb-ccd61efb0fde",
     "email": "updated@example.com",
     "passwordHash": "$2b$10$f0c5ZjZN25/46MFArJZTaOQrJkELs7nE9SaspQLtn/DEHj0ItdQlG",
-    "name": "Обновленное Имя",
+    "name": "Имя инженера изменено менеджером",
     "roles": [
       "engineer"
     ],
     "createdAt": "2025-11-19T08:55:01.465Z",
-    "updatedAt": "2025-11-24T10:31:12.584Z"
+    "updatedAt": "2025-11-24T19:57:17.944Z"
   }
 }

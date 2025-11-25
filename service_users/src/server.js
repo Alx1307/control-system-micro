@@ -3,6 +3,7 @@ const cors = require('cors');
 const formatResponse = require('./middleware/responseFormatter');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const requestLogger = require('./middleware/requestLogger');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -10,6 +11,7 @@ const PORT = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json());
 app.use(formatResponse);
+app.use(requestLogger);
 
 app.get('/v1/users/health', (req, res) => {
   res.success({

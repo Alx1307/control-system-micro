@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const Logger = require('./logger');
 
 const DB_FILE = path.join(__dirname, 'fakeDb.json');
 
@@ -22,47 +23,60 @@ class FakeDb {
       await fs.writeFile(this.dbFile, JSON.stringify(data, null, 2));
       return true;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка сохранения данных:', error);
+      Logger.error(`Ошибка сохранения данных: ${error.message}`);
       throw new Error('Ошибка сохранения данных');
     }
   }
 
-  async addUser(user) {
+  async addUser(user, requestId = 'unknown') {
     try {
       const users = await this.loadData();
       users[user.id] = user;
       await this.saveData(users);
+      Logger.info(`Пользователь добавлен: ${user.email}`, requestId);
       return user;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при добавлении пользователя:', error);
+      Logger.error(`Ошибка при добавлении пользователя: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getUserByEmail(email) {
+  async getUserByEmail(email, requestId = 'unknown') {
     try {
       const users = await this.loadData();
       const user = Object.values(users).find(user => user.email === email);
+      if (user) {
+        Logger.debug(`Пользователь найден по email: ${email}`, requestId);
+      } else {
+        Logger.debug(`Пользователь не найден по email: ${email}`, requestId);
+      }
       return user || null;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при поиске пользователя по email:', error);
+      Logger.error(`Ошибка при поиске пользователя по email: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getUserById(id) {
+  async getUserById(id, requestId = 'unknown') {
     try {
       const users = await this.loadData();
       const user = users[id];
+      if (user) {
+        Logger.debug(`Пользователь найден по ID: ${id}`, requestId);
+      } else {
+        Logger.debug(`Пользователь не найден по ID: ${id}`, requestId);
+      }
       return user || null;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при поиске пользователя по ID:', error);
+      Logger.error(`Ошибка при поиске пользователя по ID: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getAllUsers(page = 1, limit = 10, filters = {}) {
+  async getAllUsers(page = 1, limit = 10, filters = {}, requestId = 'unknown') {
     try {
+      Logger.debug('Получение списка пользователей', requestId);
+      
       const users = await this.loadData();
       let usersArray = Object.values(users);
       
@@ -88,6 +102,8 @@ class FakeDb {
       const endIndex = startIndex + limit;
       const paginatedUsers = usersArray.slice(startIndex, endIndex);
 
+      Logger.info(`Найдено ${usersArray.length} пользователей`, requestId);
+
       return {
         users: paginatedUsers,
         pagination: {
@@ -99,16 +115,17 @@ class FakeDb {
         }
       };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении списка пользователей:', error);
+      Logger.error(`Ошибка при получении списка пользователей: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async updateUser(id, updates) {
+  async updateUser(id, updates, requestId = 'unknown') {
     try {
       const users = await this.loadData();
       
       if (!users[id]) {
+        Logger.warn(`Пользователь не найден при обновлении: ${id}`, requestId);
         return null;
       }
 
@@ -125,18 +142,20 @@ class FakeDb {
       }
 
       await this.saveData(users);
+      Logger.info(`Пользователь обновлен: ${id}`, requestId);
       return { ...users[id] };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при обновлении пользователя:', error);
+      Logger.error(`Ошибка при обновлении пользователя: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async deleteUser(id) {
+  async deleteUser(id, requestId = 'unknown') {
     try {
       const users = await this.loadData();
       
       if (!users[id]) {
+        Logger.warn(`Пользователь не найден при удалении: ${id}`, requestId);
         return null;
       }
 
@@ -144,22 +163,24 @@ class FakeDb {
       delete users[id];
       
       await this.saveData(users);
+      Logger.info(`Пользователь удален: ${id}`, requestId);
       return deletedUser;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при удалении пользователя:', error);
+      Logger.error(`Ошибка при удалении пользователя: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getAllManagers() {
+  async getAllManagers(requestId = 'unknown') {
     try {
       const users = await this.loadData();
       const managers = Object.values(users).filter(user => 
         user.roles && user.roles.includes('manager')
       );
+      Logger.debug(`Найдено ${managers.length} менеджеров`, requestId);
       return managers;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении менеджеров:', error);
+      Logger.error(`Ошибка при получении менеджеров: ${error.message}`, requestId);
       throw error;
     }
   }

@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const Logger = require('./logger');
 
 const DB_FILE = path.join(__dirname, 'fakeDb.json');
 
@@ -22,35 +23,41 @@ class FakeDb {
       await fs.writeFile(this.dbFile, JSON.stringify(data, null, 2));
       return true;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка сохранения данных:', error);
+      Logger.error(`Ошибка сохранения данных: ${error.message}`);
       throw new Error('Ошибка сохранения данных');
     }
   }
 
-  async addOrder(order) {
+  async addOrder(order, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       data.orders[order.id] = order;
       await this.saveData(data);
+      Logger.info(`Заказ добавлен: ${order.id}`, requestId);
       return order;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при добавлении заказа:', error);
+      Logger.error(`Ошибка при добавлении заказа: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getOrderById(id) {
+  async getOrderById(id, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       const order = data.orders[id];
+      if (order) {
+        Logger.debug(`Заказ найден: ${id}`, requestId);
+      } else {
+        Logger.debug(`Заказ не найден: ${id}`, requestId);
+      }
       return order || null;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при поиске заказа по ID:', error);
+      Logger.error(`Ошибка при поиске заказа по ID: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getUserOrders(userId, page = 1, limit = 10, filters = {}) {
+  async getUserOrders(userId, page = 1, limit = 10, filters = {}, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       let ordersArray = Object.values(data.orders).filter(order => order.userId === userId);
@@ -77,6 +84,8 @@ class FakeDb {
       const endIndex = startIndex + limit;
       const paginatedOrders = ordersArray.slice(startIndex, endIndex);
 
+      Logger.info(`Найдено ${ordersArray.length} заказов для пользователя ${userId}`, requestId);
+
       return {
         orders: paginatedOrders,
         pagination: {
@@ -88,14 +97,14 @@ class FakeDb {
         }
       };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении заказов пользователя:', error);
+      Logger.error(`Ошибка при получении заказов пользователя: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getEngineerOrders(engineerId, page = 1, limit = 10, filters = {}) {
+  async getEngineerOrders(engineerId, page = 1, limit = 10, filters = {}, requestId = 'unknown') {
     try {
-      console.log('[FAKE_DB] Получение заказов инженера:', { engineerId, page, limit, filters });
+      Logger.debug(`Получение заказов инженера: ${engineerId}`, requestId);
       
       const data = await this.loadData();
       let ordersArray = Object.values(data.orders).filter(order => order.assignedEngineerId === engineerId);
@@ -133,17 +142,19 @@ class FakeDb {
         }
       };
   
-      console.log(`[FAKE_DB] Найдено ${result.pagination.totalOrders} заказов для инженера ${engineerId}`);
+      Logger.info(`Найдено ${result.pagination.totalOrders} заказов для инженера ${engineerId}`, requestId);
       
       return result;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении заказов инженера:', error);
+      Logger.error(`Ошибка при получении заказов инженера: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getAllOrders(page = 1, limit = 10, filters = {}) {
+  async getAllOrders(page = 1, limit = 10, filters = {}, requestId = 'unknown') {
     try {
+      Logger.debug('Получение всех заказов', requestId);
+      
       const data = await this.loadData();
       let ordersArray = Object.values(data.orders);
       
@@ -173,6 +184,8 @@ class FakeDb {
       const endIndex = startIndex + limit;
       const paginatedOrders = ordersArray.slice(startIndex, endIndex);
 
+      Logger.info(`Найдено ${ordersArray.length} заказов`, requestId);
+
       return {
         orders: paginatedOrders,
         pagination: {
@@ -184,16 +197,17 @@ class FakeDb {
         }
       };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении всех заказов:', error);
+      Logger.error(`Ошибка при получении всех заказов: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async updateOrder(id, updates) {
+  async updateOrder(id, updates, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       
       if (!data.orders[id]) {
+        Logger.warn(`Заказ не найден при обновлении: ${id}`, requestId);
         return null;
       }
 
@@ -204,18 +218,20 @@ class FakeDb {
       };
 
       await this.saveData(data);
+      Logger.info(`Заказ обновлен: ${id}`, requestId);
       return { ...data.orders[id] };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при обновлении заказа:', error);
+      Logger.error(`Ошибка при обновлении заказа: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async updateOrderStatus(id, status) {
+  async updateOrderStatus(id, status, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       
       if (!data.orders[id]) {
+        Logger.warn(`Заказ не найден при обновлении статуса: ${id}`, requestId);
         return null;
       }
 
@@ -223,18 +239,20 @@ class FakeDb {
       data.orders[id].updatedAt = new Date().toISOString();
 
       await this.saveData(data);
+      Logger.info(`Статус заказа обновлен: ${id} -> ${status}`, requestId);
       return { ...data.orders[id] };
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при обновлении статуса заказа:', error);
+      Logger.error(`Ошибка при обновлении статуса заказа: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async deleteOrder(id) {
+  async deleteOrder(id, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       
       if (!data.orders[id]) {
+        Logger.warn(`Заказ не найден при удалении: ${id}`, requestId);
         return null;
       }
 
@@ -242,37 +260,46 @@ class FakeDb {
       delete data.orders[id];
       
       await this.saveData(data);
+      Logger.info(`Заказ удален: ${id}`, requestId);
       return deletedOrder;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при удалении заказа:', error);
+      Logger.error(`Ошибка при удалении заказа: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getOrdersByStatus(status) {
+  async getOrdersByStatus(status, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       const orders = Object.values(data.orders).filter(order => order.status === status);
+      Logger.debug(`Найдено ${orders.length} заказов со статусом ${status}`, requestId);
       return orders;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при поиске заказов по статусу:', error);
+      Logger.error(`Ошибка при поиске заказов по статусу: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getUserById(id) {
+  async getUserById(id, requestId = 'unknown') {
     try {
       const data = await this.loadData();
       const user = data.users[id];
+      if (user) {
+        Logger.debug(`Пользователь найден: ${id}`, requestId);
+      } else {
+        Logger.debug(`Пользователь не найден: ${id}`, requestId);
+      }
       return user || null;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при поиске пользователя по ID:', error);
+      Logger.error(`Ошибка при поиске пользователя по ID: ${error.message}`, requestId);
       throw error;
     }
   }
 
-  async getOrderStatistics() {
+  async getOrderStatistics(requestId = 'unknown') {
     try {
+      Logger.debug('Получение статистики заказов', requestId);
+      
       const data = await this.loadData();
       const orders = Object.values(data.orders);
       
@@ -289,9 +316,11 @@ class FakeDb {
           .reduce((sum, order) => sum + (order.totalAmount || 0), 0)
       };
 
+      Logger.info(`Статистика получена: ${statistics.total} заказов`, requestId);
+
       return statistics;
     } catch (error) {
-      console.error('[FAKE_DB] Ошибка при получении статистики:', error);
+      Logger.error(`Ошибка при получении статистики: ${error.message}`, requestId);
       throw error;
     }
   }

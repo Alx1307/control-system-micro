@@ -3,16 +3,19 @@ const Order = require('../models/Order');
 const { OrderStatus, OrderEvents } = require('../config/constants');
 const eventEmitter = require('../utils/eventEmitter');
 const axios = require('axios');
+const Logger = require('../utils/logger');
 
 const ordersController = {
   async createOrder(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[CREATE_ORDER] Запрос на создание заказа от пользователя:', req.user.userId);
+      Logger.info(`Запрос на создание заказа от пользователя: ${req.user.userId}`, requestId);
 
       const { items, assignedEngineerId = null } = req.body;
 
       if (assignedEngineerId) {
-        console.log('[CREATE_ORDER] Назначен инженер:', assignedEngineerId);
+        Logger.info(`Назначен инженер: ${assignedEngineerId}`, requestId);
       }
 
       const order = new Order({
@@ -28,7 +31,7 @@ const ordersController = {
         assignedEngineerId: assignedEngineerId
       });
 
-      console.log('[CREATE_ORDER] Заказ успешно создан:', savedOrder.id);
+      Logger.info(`Заказ успешно создан: ${savedOrder.id}`, requestId);
 
       res.success(
         { order: savedOrder },
@@ -37,30 +40,35 @@ const ordersController = {
       );
 
     } catch (error) {
-      console.error('[CREATE_ORDER] Ошибка:', error);
+      Logger.error(`Ошибка при создании заказа: ${error.message}`, requestId);
       res.error('CREATE_ORDER_ERROR', 'Ошибка при создании заказа', 500);
     }
   },
 
   async assignEngineer(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[ASSIGN_ENGINEER] Запрос на назначение исполнителя:', req.params.orderId);
+      Logger.info(`Запрос на назначение исполнителя: ${req.params.orderId}`, requestId);
   
       const orderId = req.params.orderId;
       const { engineerId } = req.body;
   
       const orderData = await fakeDb.getOrderById(orderId);
       if (!orderData) {
+        Logger.warn(`Заказ не найден: ${orderId}`, requestId);
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
   
       const order = new Order(orderData);
   
       if (!req.user.roles.includes('manager')) {
+        Logger.warn(`Попытка назначения без прав менеджера: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Только менеджеры могут назначать исполнителей', 403);
       }
 
       if (!engineerId) {
+        Logger.warn('ID инженера не указан', requestId);
         return res.error('INVALID_ENGINEER', 'ID инженера обязателен', 400);
       }
 
@@ -68,31 +76,36 @@ const ordersController = {
         const usersServiceUrl = process.env.USERS_SERVICE_URL || 'http://service_users:8000';
         const response = await axios.get(`${usersServiceUrl}/v1/users/users/${engineerId}`, {
           headers: {
-            'Authorization': req.headers['authorization']
+            'Authorization': req.headers['authorization'],
+            'X-Request-ID': requestId
           },
           timeout: 5000
         });
 
         if (!response.data.success) {
+          Logger.warn(`Указанный инженер не найден: ${engineerId}`, requestId);
           return res.error('INVALID_ENGINEER', 'Указанный инженер не найден', 400);
         }
 
         const engineer = response.data.data.user;
         if (!engineer.roles.includes('engineer')) {
+          Logger.warn(`Пользователь не является инженером: ${engineerId}`, requestId);
           return res.error('INVALID_ENGINEER', 'Указанный пользователь не является инженером', 400);
         }
 
-        console.log('[ASSIGN_ENGINEER] Инженер найден:', engineer.id, engineer.email);
+        Logger.info(`Инженер найден: ${engineer.id}, ${engineer.email}`, requestId);
 
       } catch (error) {
         if (error.response && error.response.status === 404) {
+          Logger.warn(`Инженер не найден: ${engineerId}`, requestId);
           return res.error('INVALID_ENGINEER', 'Указанный инженер не найден', 400);
         }
-        console.error('[ASSIGN_ENGINEER] Ошибка проверки инженера:', error.message);
+        Logger.error(`Ошибка проверки инженера: ${error.message}`, requestId);
         return res.error('ENGINEER_VALIDATION_ERROR', 'Ошибка при проверке инженера', 500);
       }
   
       if (!order.canBeAssigned()) {
+        Logger.warn(`Невозможно назначить исполнителя для заказа в статусе: ${order.status}`, requestId);
         return res.error('CANNOT_ASSIGN', 'Невозможно назначить исполнителя для заказа в текущем статусе', 400);
       }
   
@@ -110,7 +123,7 @@ const ordersController = {
         eventType: 'ENGINEER_ASSIGNED'
       });
   
-      console.log('[ASSIGN_ENGINEER] Исполнитель успешно назначен:', orderId, '->', engineerId);
+      Logger.info(`Исполнитель успешно назначен: ${orderId} -> ${engineerId}`, requestId);
   
       res.success(
         { order: updatedOrder },
@@ -118,34 +131,38 @@ const ordersController = {
       );
   
     } catch (error) {
-      console.error('[ASSIGN_ENGINEER] Ошибка:', error);
+      Logger.error(`Ошибка при назначении исполнителя: ${error.message}`, requestId);
       res.error('ASSIGN_ENGINEER_ERROR', 'Ошибка при назначении исполнителя', 500);
     }
   },
 
   async getOrderById(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[GET_ORDER_BY_ID] Запрос на получение заказа:', req.params.orderId);
+      Logger.info(`Запрос на получение заказа: ${req.params.orderId}`, requestId);
 
       const order = req.order || await fakeDb.getOrderById(req.params.orderId);
 
       if (!order) {
-        console.log('[GET_ORDER_BY_ID] Заказ не найден');
+        Logger.warn(`Заказ не найден: ${req.params.orderId}`, requestId);
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
 
-      console.log('[GET_ORDER_BY_ID] Доступ разрешен, возвращаем заказ');
+      Logger.info(`Доступ разрешен, возвращаем заказ: ${req.params.orderId}`, requestId);
       res.success({ order }, 'Заказ получен успешно');
 
     } catch (error) {
-      console.error('[GET_ORDER_BY_ID] Ошибка:', error);
+      Logger.error(`Ошибка при получении заказа: ${error.message}`, requestId);
       res.error('GET_ORDER_ERROR', 'Ошибка при получении заказа', 500);
     }
   },
 
   async getUserOrders(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[GET_USER_ORDERS] Запрос на получение заказов пользователя:', req.user.userId);
+      Logger.info(`Запрос на получение заказов пользователя: ${req.user.userId}`, requestId);
 
       const { 
         page = 1, 
@@ -159,6 +176,7 @@ const ordersController = {
       const limitNum = parseInt(limit);
 
       if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
+        Logger.warn(`Некорректные параметры пагинации: page=${page}, limit=${limit}`, requestId);
         return res.error('VALIDATION_ERROR', 'Некорректные параметры пагинации', 400);
       }
 
@@ -169,12 +187,14 @@ const ordersController = {
 
       let result;
       if (req.user.roles.includes('engineer')) {
+        Logger.debug(`Получение заказов для инженера: ${req.user.userId}`, requestId);
         result = await fakeDb.getEngineerOrders(req.user.userId, pageNum, limitNum, filters);
       } else {
+        Logger.debug(`Получение заказов для пользователя: ${req.user.userId}`, requestId);
         result = await fakeDb.getUserOrders(req.user.userId, pageNum, limitNum, filters);
       }
 
-      console.log(`[GET_USER_ORDERS] Найдено ${result.pagination.totalOrders} заказов`);
+      Logger.info(`Найдено ${result.pagination.totalOrders} заказов`, requestId);
 
       res.success({
         orders: result.orders,
@@ -182,16 +202,19 @@ const ordersController = {
       }, 'Список заказов получен успешно');
 
     } catch (error) {
-      console.error('[GET_USER_ORDERS] Ошибка:', error);
+      Logger.error(`Ошибка при получении списка заказов: ${error.message}`, requestId);
       res.error('GET_USER_ORDERS_ERROR', 'Ошибка при получении списка заказов', 500);
     }
   },
 
   async getAllOrders(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[GET_ALL_ORDERS] Запрос на получение всех заказов');
+      Logger.info('Запрос на получение всех заказов', requestId);
 
       if (!req.user.roles.includes('manager') && !req.user.roles.includes('viewer')) {
+        Logger.warn(`Попытка доступа без прав менеджера/viewer: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Доступ запрещен. Требуются права менеджера или viewer', 403);
       }
 
@@ -209,6 +232,7 @@ const ordersController = {
       const limitNum = parseInt(limit);
 
       if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
+        Logger.warn(`Некорректные параметры пагинации: page=${page}, limit=${limit}`, requestId);
         return res.error('VALIDATION_ERROR', 'Некорректные параметры пагинации', 400);
       }
 
@@ -221,7 +245,7 @@ const ordersController = {
 
       const result = await fakeDb.getAllOrders(pageNum, limitNum, filters);
 
-      console.log(`[GET_ALL_ORDERS] Найдено ${result.pagination.totalOrders} заказов`);
+      Logger.info(`Найдено ${result.pagination.totalOrders} заказов`, requestId);
 
       res.success({
         orders: result.orders,
@@ -229,20 +253,23 @@ const ordersController = {
       }, 'Список всех заказов получен успешно');
 
     } catch (error) {
-      console.error('[GET_ALL_ORDERS] Ошибка:', error);
+      Logger.error(`Ошибка при получении списка заказов: ${error.message}`, requestId);
       res.error('GET_ALL_ORDERS_ERROR', 'Ошибка при получении списка заказов', 500);
     }
   },
 
   async updateOrderStatus(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[UPDATE_ORDER_STATUS] Запрос на обновление статуса заказа:', req.params.orderId);
+      Logger.info(`Запрос на обновление статуса заказа: ${req.params.orderId}`, requestId);
   
       const orderId = req.params.orderId;
       const { status } = req.body;
   
       const orderData = await fakeDb.getOrderById(orderId);
       if (!orderData) {
+        Logger.warn(`Заказ не найден: ${orderId}`, requestId);
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
 
@@ -252,11 +279,13 @@ const ordersController = {
       const isAssignedEngineer = order.assignedEngineerId === req.user.userId;
   
       if (!isManager && !isAssignedEngineer) {
+        Logger.warn(`Доступ к заказу запрещен для пользователя: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Доступ к заказу запрещен', 403);
       }
   
       const allowedStatuses = ['created', 'in_progress', 'under_review', 'completed'];
       if (!allowedStatuses.includes(status)) {
+        Logger.warn(`Некорректный статус заказа: ${status}`, requestId);
         return res.error('INVALID_STATUS', 'Некорректный статус заказа', 400);
       }
   
@@ -267,19 +296,23 @@ const ordersController = {
       };
   
       if (forbiddenTransitions[order.status]?.includes(status)) {
+        Logger.warn(`Невозможно изменить статус с ${order.status} на ${status}`, requestId);
         return res.error('INVALID_STATUS_TRANSITION', `Невозможно изменить статус с ${order.status} на ${status}`, 400);
       }
   
       if (isManager) {
         if (status === OrderStatus.COMPLETED && order.status !== OrderStatus.UNDER_REVIEW) {
+          Logger.warn(`Менеджер пытается завершить заказ не со статуса "на проверке": ${order.status}`, requestId);
           return res.error('INVALID_STATUS_TRANSITION', 'Менеджер может завершить заказ только со статуса "на проверке"', 400);
         }
         
         if (status === OrderStatus.IN_PROGRESS && order.status !== OrderStatus.UNDER_REVIEW) {
+          Logger.warn(`Менеджер пытается вернуть заказ на доработку не со статуса "на проверке": ${order.status}`, requestId);
           return res.error('INVALID_STATUS_TRANSITION', 'Менеджер может вернуть заказ на доработку только со статуса "на проверке"', 400);
         }
       } else if (isAssignedEngineer) {
         if (!(order.status === OrderStatus.IN_PROGRESS && status === OrderStatus.UNDER_REVIEW)) {
+          Logger.warn(`Инженер пытается изменить статус не по правилам: ${order.status} -> ${status}`, requestId);
           return res.error('INVALID_STATUS_TRANSITION', 'Инженер может изменить статус только с "в работе" на "на проверке"', 400);
         }
       }
@@ -293,7 +326,7 @@ const ordersController = {
         userId: req.user.userId
       });
   
-      console.log('[UPDATE_ORDER_STATUS] Статус заказа успешно обновлен:', orderId, order.status, '->', status);
+      Logger.info(`Статус заказа успешно обновлен: ${orderId}, ${order.status} -> ${status}`, requestId);
   
       res.success(
         { order: updatedOrder },
@@ -301,24 +334,28 @@ const ordersController = {
       );
   
     } catch (error) {
-      console.error('[UPDATE_ORDER_STATUS] Ошибка:', error);
+      Logger.error(`Ошибка при обновлении статуса заказа: ${error.message}`, requestId);
       res.error('UPDATE_ORDER_STATUS_ERROR', 'Ошибка при обновлении статуса заказа', 500);
     }
   },
 
   async updateOrder(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[UPDATE_ORDER] Запрос на обновление заказа:', req.params.orderId);
+      Logger.info(`Запрос на обновление заказа: ${req.params.orderId}`, requestId);
 
       const orderId = req.params.orderId;
       const { items } = req.body;
 
       const orderData = await fakeDb.getOrderById(orderId);
       if (!orderData) {
+        Logger.warn(`Заказ не найден: ${orderId}`, requestId);
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
 
       if (!req.user.roles.includes('manager')) {
+        Logger.warn(`Попытка обновления заказа без прав менеджера: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Только менеджеры могут изменять заказы', 403);
       }
 
@@ -333,7 +370,7 @@ const ordersController = {
         userId: req.user.userId
       });
 
-      console.log('[UPDATE_ORDER] Заказ успешно обновлен:', orderId);
+      Logger.info(`Заказ успешно обновлен: ${orderId}`, requestId);
 
       res.success(
         { order: updatedOrder },
@@ -341,29 +378,34 @@ const ordersController = {
       );
 
     } catch (error) {
-      console.error('[UPDATE_ORDER] Ошибка:', error);
+      Logger.error(`Ошибка при обновлении заказа: ${error.message}`, requestId);
       res.error('UPDATE_ORDER_ERROR', 'Ошибка при обновлении заказа', 500);
     }
   },
 
   async cancelOrder(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[CANCEL_ORDER] Запрос на отмену заказа:', req.params.orderId);
+      Logger.info(`Запрос на отмену заказа: ${req.params.orderId}`, requestId);
 
       const orderId = req.params.orderId;
 
       const orderData = await fakeDb.getOrderById(orderId);
       if (!orderData) {
+        Logger.warn(`Заказ не найден: ${orderId}`, requestId);
         return res.error('ORDER_NOT_FOUND', 'Заказ не найден', 404);
       }
 
       const order = new Order(orderData);
 
       if (!req.user.roles.includes('manager')) {
+        Logger.warn(`Попытка отмены заказа без прав менеджера: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Только менеджеры могут отменять заказы', 403);
       }
 
       if (!order.canBeCancelled()) {
+        Logger.warn(`Невозможно отменить заказ в статусе: ${order.status}`, requestId);
         return res.error('CANNOT_CANCEL', 'Невозможно отменить заказ в текущем статусе', 400);
       }
 
@@ -375,7 +417,7 @@ const ordersController = {
         previousStatus: order.status
       });
 
-      console.log('[CANCEL_ORDER] Заказ успешно отменен:', orderId);
+      Logger.info(`Заказ успешно отменен: ${orderId}`, requestId);
 
       res.success(
         { order: cancelledOrder },
@@ -383,20 +425,25 @@ const ordersController = {
       );
 
     } catch (error) {
-      console.error('[CANCEL_ORDER] Ошибка:', error);
+      Logger.error(`Ошибка при отмене заказа: ${error.message}`, requestId);
       res.error('CANCEL_ORDER_ERROR', 'Ошибка при отмене заказа', 500);
     }
   },
 
   async getOrderStatistics(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
-      console.log('[GET_ORDER_STATISTICS] Запрос на получение статистики');
+      Logger.info('Запрос на получение статистики', requestId);
 
       if (!req.user.roles.includes('manager') && !req.user.roles.includes('viewer')) {
+        Logger.warn(`Попытка доступа к статистике без прав: ${req.user.userId}`, requestId);
         return res.error('FORBIDDEN', 'Доступ запрещен. Требуются права менеджера или viewer', 403);
       }
 
       const statistics = await fakeDb.getOrderStatistics();
+
+      Logger.info(`Статистика получена: ${statistics.total} заказов`, requestId);
 
       res.success(
         { statistics },
@@ -404,24 +451,28 @@ const ordersController = {
       );
 
     } catch (error) {
-      console.error('[GET_ORDER_STATISTICS] Ошибка:', error);
+      Logger.error(`Ошибка при получении статистики: ${error.message}`, requestId);
       res.error('GET_STATISTICS_ERROR', 'Ошибка при получении статистики', 500);
     }
   },
 
   async getServiceStatus(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
       res.success({
         status: 'Orders service is running',
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error('[GET_SERVICE_STATUS] Ошибка:', error);
+      Logger.error(`Ошибка при получении статуса сервиса: ${error.message}`, requestId);
       res.error('SERVICE_STATUS_ERROR', 'Ошибка при получении статуса сервиса', 500);
     }
   },
 
   async getHealth(req, res) {
+    const requestId = req.headers['x-request-id'] || 'unknown';
+    
     try {
       res.success({
         status: 'OK',
@@ -429,7 +480,7 @@ const ordersController = {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error('[GET_HEALTH] Ошибка:', error);
+      Logger.error(`Ошибка при проверке здоровья сервиса: ${error.message}`, requestId);
       res.error('HEALTH_CHECK_ERROR', 'Ошибка при проверке здоровья сервиса', 500);
     }
   }
